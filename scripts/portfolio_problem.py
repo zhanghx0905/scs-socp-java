@@ -47,37 +47,75 @@ def gen_data():
     return V, rbar
 
 
+# In SCS, 
+# we minimize c^T x
+# subject to Ax + s = b, s in K
+# 
+# In Prof. Wu's documentation, 
+# we minimize b^T x
+# subject to A^T x + s = c, s in K
+#
+# These two representations are somewhat confusing but can correspond to each other
+# In following comments, I used the notation in the document before returning the final result.
 def convert_data() -> tuple[sparse.csc_matrix, sparse.csc_matrix, sparse.csc_matrix]:
+    # Please refer to Eq (12), rbar is gamma in Eq (12) 
     V, rbar = gen_data()
 
     n1 = V.shape[1]
+    # L in A1 is the lower triangular Cholesky decompositionof V,
+    # i.e., V = LLT.
     L = sparse.csc_matrix(np.linalg.cholesky(V))
+
+    # Aq size = (n + 1) * (n + 2)
+    # Aq = [0_(n*1) L   0_(n*1)] 
     Aq = sparse.hstack((np.zeros((n1, 1)), L, np.zeros((n1, 1))), format="csc")
+    # Aq = [0_(n*1) L       0_(n*1) ]
+    #      [1/2     0_(1*n) 1/2     ]
     Aq = sparse.vstack((Aq, np.zeros((1, n1 + 2))), format="csc")
     Aq[n1, 0] = Aq[n1, n1 + 1] = 0.5
-    # (n1 + 1) * (n1 + 2)
-
+    
+    # cq = [1/2 0_(n*1) -1/2]_T
     cq = sparse.csc_matrix((n1 + 2, 1))
     cq[0] = 0.5
     cq[-1] = -0.5
 
+    # Al size = (n + 1) * 2
+    # Al = [0_(n*1)     ones_{n*1}]
+    #      [0           0         ]
     Al = sparse.hstack(
         [sparse.csc_matrix((n1, 1)), sparse.csc_matrix(np.ones((n1, 1)))], format="csc"
-    )  # np.eye(n1 + 1, n1)
+    )
     Al = sparse.vstack([Al, np.zeros((1, 2))], format="csc")
+    # cl = [0   -1]_T
     cl = np.array([[0], [-1]])
 
     Aus = []
     cus = []
+    # For each Au, Au size = (n + 1) * 2
     for i in range(n1):
+        # Au = [ei  0_(n*1)]
+        #      [0   0      ]
         Au = np.zeros((n1 + 1, 2))
+        # ei's i-th element is 1, all others are 0
         Au[i, 0] = 1
+        # cu = [0 0]_T
         cu = np.zeros((2, 1))
         Aus.append(Au)
         cus.append(cu)
 
+
+    ## In SCS, 
+    # we minimize c^T x
+    # subject to Ax + s = b, s in K
+    # 
+    # In Prof. Wu's documentation, 
+    # we minimize b^T x, b = [- rbar lambda]
+    # subject to A^T x + s = c, s in K
+    #
+    # Up to now we used the Prof. Wu's representation, 
+    # now converted to SCS's convention
     A = sparse.hstack((Aq, Al, *Aus), format="csc").T
-    c = -sparse.vstack((rbar, [LAMBA]), format="csc")
+    c = sparse.vstack((-rbar, [LAMBA]), format="csc")
     b = sparse.vstack((cq, cl, *cus), format="csc")
     return A, b, c
 
